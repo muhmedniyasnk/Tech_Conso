@@ -1,23 +1,22 @@
 const express = require('express');
+const axios = require('axios');
 const router = express.Router();
 
-router.post('/predict', (req, res) => {
-  const { stage, quantity } = req.body;
+const ML_URL = process.env.ML_SERVICE_URL || 'http://localhost:6000';
 
-  let labour = 0;
-  let cement = 0;
-
-  if (stage === 'Plastering') {
-    labour = Math.ceil(quantity / 100);   // 1 labour per 100 sqft
-    cement = Math.ceil(quantity / 50);    // 1 bag per 50 sqft
+router.post('/predict', async (req, res) => {
+  if (!req.body || Object.keys(req.body).length === 0) {
+    return res.status(400).json({ error: 'Request body is required' });
   }
 
-  if (stage === 'Concrete') {
-    labour = Math.ceil(quantity / 2);
-    cement = Math.ceil(quantity * 7);
+  try {
+    const { data } = await axios.post(`${ML_URL}/predict`, req.body);
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status || 502;
+    const message = err.response?.data || 'ML service unavailable';
+    res.status(status).json({ error: message });
   }
-
-  res.json({ labour, cement });
 });
 
 module.exports = router;

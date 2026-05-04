@@ -1,87 +1,229 @@
 import pandas as pd
 import numpy as np
-import random
 
-rows = []
+N = 50000
+rng = np.random.default_rng(42)
 
-stages = ["plastering", "brickwork", "foundation", "concrete"]
+# Kerala/India realistic multipliers
+LOCATION_TIER = [0.80, 1.0, 1.30]        # 0=rural, 1=town, 2=city (Kozhikode/Thrissur/Kochi)
+SEASON        = [1.0, 1.10, 0.92, 1.15]  # 0=normal, 1=peak, 2=offseason, 3=monsoon
+QUALITY       = [0.85, 1.0, 1.28]        # 0=basic, 1=standard, 2=premium
 
-for _ in range(1000):
+def noise(n, pct=0.05):
+    return rng.normal(1.0, pct, n)
 
-    stage = random.choice(stages)
+# ── Plastering ─────────────────────────────────────────────────────────────
+# Kerala rate: Rs 35–65 per sqft depending on quality
+def make_plastering(n=N):
+    area      = rng.uniform(50, 5000, n)       # sqft
+    thickness = rng.choice([10, 12, 15, 20], n) # mm
+    loc       = rng.choice([0, 1, 2], n)
+    qual      = rng.choice([0, 1, 2], n)
+    base_rate = np.array([35, 48, 65])[qual]    # Rs/sqft
+    cost = area * base_rate * (thickness / 12)
+    cost *= np.array([LOCATION_TIER[l] for l in loc])
+    cost *= noise(n, 0.07)
+    return pd.DataFrame({
+        "area_sqft": area, "thickness_mm": thickness,
+        "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 500), 2)
+    })
 
-    area = None
-    thickness = None
-    volume = None
-    soil = None
-    brick_size = None
-    grade = None
+# ── Brickwork ──────────────────────────────────────────────────────────────
+# Kerala rate: Rs 55–80 per sqft
+def make_brickwork(n=N):
+    area   = rng.uniform(30, 3000, n)
+    brick  = rng.choice([0, 1], n)             # 0=standard, 1=large
+    loc    = rng.choice([0, 1, 2], n)
+    floors = rng.integers(1, 8, n).astype(float)
+    rate   = np.where(brick == 0, 55, 48)       # standard brick costs more per sqft
+    cost   = area * rate * (1 + floors * 0.05)
+    cost  *= np.array([LOCATION_TIER[l] for l in loc])
+    cost  *= noise(n, 0.07)
+    return pd.DataFrame({
+        "area_sqft": area, "brick_size": brick,
+        "location": loc, "floors": floors,
+        "cost": np.round(np.maximum(cost, 1000), 2)
+    })
 
-    cement = 0
-    sand = 0
-    labor = 0
+# ── Foundation ─────────────────────────────────────────────────────────────
+# Kerala rate: Rs 4500–7000 per cubic ft depending on soil
+def make_foundation(n=N):
+    volume = rng.uniform(10, 800, n)            # cubic ft
+    soil   = rng.choice([0, 1, 2], n)           # 0=clay, 1=sand, 2=rock
+    depth  = rng.uniform(1.5, 7.0, n)           # meters
+    loc    = rng.choice([0, 1, 2], n)
+    rate   = np.array([5200, 4500, 7000])[soil]  # rock needs blasting = expensive
+    cost   = volume * rate * (1 + (depth - 1.5) * 0.10)
+    cost  *= np.array([LOCATION_TIER[l] for l in loc])
+    cost  *= noise(n, 0.08)
+    return pd.DataFrame({
+        "volume_cuft": volume, "soil_type": soil,
+        "depth_m": depth, "location": loc,
+        "cost": np.round(np.maximum(cost, 5000), 2)
+    })
 
-    if stage == "plastering":
-        area = random.randint(80, 400)
-        thickness = random.choice([10, 12, 15])
+# ── Concrete ───────────────────────────────────────────────────────────────
+# Kerala rate: M20=Rs 5500, M25=Rs 6200, M30=Rs 7200 per cubic ft
+def make_concrete(n=N):
+    volume = rng.uniform(5, 500, n)
+    grade  = rng.choice([0, 1, 2], n)           # 0=M20, 1=M25, 2=M30
+    loc    = rng.choice([0, 1, 2], n)
+    season = rng.choice([0, 1, 2, 3], n)
+    rate   = np.array([5500, 6200, 7200])[grade]
+    cost   = volume * rate
+    cost  *= np.array([LOCATION_TIER[l] for l in loc])
+    cost  *= np.array([SEASON[s] for s in season])
+    cost  *= noise(n, 0.06)
+    return pd.DataFrame({
+        "volume_cuft": volume, "grade": grade,
+        "location": loc, "season": season,
+        "cost": np.round(np.maximum(cost, 2000), 2)
+    })
 
-        cement = area * thickness * 0.002 + np.random.uniform(-0.5, 0.5)
-        sand = cement * 3.2 + np.random.uniform(-1, 1)
-        labor = area / random.uniform(80, 120)
+# ── Roofing ────────────────────────────────────────────────────────────────
+# Kerala: sheets=Rs 1200/sqm, tiles=Rs 2200/sqm, concrete=Rs 4500/sqm
+def make_roofing(n=N):
+    roof_type = rng.choice([0, 1, 2], n)        # 0=sheets, 1=tile, 2=concrete
+    area      = rng.uniform(20, 700, n)          # sqm
+    pitch     = np.where(roof_type < 2, rng.uniform(5, 45, n), 0.0)
+    loc       = rng.choice([0, 1, 2], n)
+    qual      = rng.choice([0, 1, 2], n)
+    base_rate = np.array([1200, 2200, 4500])[roof_type]
+    pitch_fac = np.where(roof_type < 2, 1 + pitch / 90, 1.0)
+    cost      = area * base_rate * pitch_fac
+    cost     *= np.array([LOCATION_TIER[l] for l in loc])
+    cost     *= np.array([QUALITY[q] for q in qual])
+    cost     *= noise(n, 0.07)
+    return pd.DataFrame({
+        "roof_type": roof_type, "area_sqm": area,
+        "pitch_angle": pitch, "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 5000), 2)
+    })
 
-    elif stage == "brickwork":
-        area = random.randint(150, 500)
-        brick_size = random.choice(["standard", "large"])
+# ── Walls ──────────────────────────────────────────────────────────────────
+# Kerala: Rs 700–1100 per sqm depending on quality
+def make_walls(n=N):
+    length    = rng.uniform(5, 250, n)
+    height    = rng.uniform(2.8, 5.5, n)
+    thickness = rng.uniform(0.1, 0.35, n)
+    loc       = rng.choice([0, 1, 2], n)
+    qual      = rng.choice([0, 1, 2], n)
+    base_rate = np.array([700, 900, 1100])[qual]
+    cost      = length * height * thickness * base_rate
+    cost     *= np.array([LOCATION_TIER[l] for l in loc])
+    cost     *= noise(n, 0.07)
+    return pd.DataFrame({
+        "length_m": length, "height_m": height,
+        "thickness_m": thickness, "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 2000), 2)
+    })
 
-        factor = 1.0 if brick_size == "standard" else 1.2
-        cement = area * 0.025 * factor + np.random.uniform(-1, 1)
-        sand = cement * 3.5 + np.random.uniform(-2, 2)
-        labor = area / random.uniform(60, 100)
+# ── Plumbing ───────────────────────────────────────────────────────────────
+# Kerala: Rs 25,000–45,000 per bathroom, Rs 18,000–30,000 per kitchen
+def make_plumbing(n=N):
+    floors    = rng.integers(1, 10, n).astype(float)
+    bathrooms = rng.integers(1, 8, n).astype(float)
+    kitchens  = rng.integers(1, 5, n).astype(float)
+    loc       = rng.choice([0, 1, 2], n)
+    qual      = rng.choice([0, 1, 2], n)
+    bath_rate = np.array([25000, 35000, 45000])[qual]
+    kit_rate  = np.array([18000, 24000, 30000])[qual]
+    cost      = (floors * bathrooms * bath_rate) + (kitchens * kit_rate)
+    cost     *= np.array([LOCATION_TIER[l] for l in loc])
+    cost     *= noise(n, 0.08)
+    return pd.DataFrame({
+        "floors": floors, "bathrooms": bathrooms,
+        "kitchens": kitchens, "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 10000), 2)
+    })
 
-    elif stage == "foundation":
-        volume = random.randint(200, 1000)
-        soil = random.choice(["clay", "sand", "rock"])
+# ── Electrical ─────────────────────────────────────────────────────────────
+# Kerala: Rs 8,000–15,000 per room for wiring + fixtures
+def make_electrical(n=N):
+    floors = rng.integers(1, 10, n).astype(float)
+    rooms  = rng.integers(2, 15, n).astype(float)
+    loc    = rng.choice([0, 1, 2], n)
+    qual   = rng.choice([0, 1, 2], n)
+    rate   = np.array([8000, 11000, 15000])[qual]
+    cost   = floors * rooms * rate
+    cost  *= np.array([LOCATION_TIER[l] for l in loc])
+    cost  *= noise(n, 0.07)
+    return pd.DataFrame({
+        "floors": floors, "rooms_per_floor": rooms,
+        "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 5000), 2)
+    })
 
-        soil_factor = {"clay": 1.0, "sand": 0.9, "rock": 1.3}
-        cement = volume * 0.03 * soil_factor[soil] + np.random.uniform(-2, 2)
-        sand = cement * 3.0 + np.random.uniform(-3, 3)
-        labor = volume / random.uniform(50, 80)
+# ── Painting ───────────────────────────────────────────────────────────────
+# Kerala: Rs 18–40 per sqft depending on quality and coats
+def make_painting(n=N):
+    area  = rng.uniform(100, 10000, n)
+    coats = rng.choice([1, 2, 3], n)
+    loc   = rng.choice([0, 1, 2], n)
+    qual  = rng.choice([0, 1, 2], n)
+    rate  = np.array([18, 26, 40])[qual]
+    cost  = area * coats * rate
+    cost *= np.array([LOCATION_TIER[l] for l in loc])
+    cost *= noise(n, 0.06)
+    return pd.DataFrame({
+        "area_sqft": area, "coats": coats,
+        "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 1000), 2)
+    })
 
-    elif stage == "concrete":
-        volume = random.randint(300, 1000)
-        grade = random.choice(["M20", "M25", "M30"])
+# ── Tiling ─────────────────────────────────────────────────────────────────
+# Kerala: small=Rs 450/sqm, medium=Rs 650/sqm, large=Rs 950/sqm
+def make_tiling(n=N):
+    area      = rng.uniform(20, 1200, n)
+    tile_size = rng.choice([0, 1, 2], n)        # 0=small(30x30), 1=medium(60x60), 2=large(80x80)
+    loc       = rng.choice([0, 1, 2], n)
+    qual      = rng.choice([0, 1, 2], n)
+    rate      = np.array([450, 650, 950])[tile_size]
+    cost      = area * rate
+    cost     *= np.array([LOCATION_TIER[l] for l in loc])
+    cost     *= np.array([QUALITY[q] for q in qual])
+    cost     *= noise(n, 0.07)
+    return pd.DataFrame({
+        "area_sqm": area, "tile_size": tile_size,
+        "location": loc, "quality": qual,
+        "cost": np.round(np.maximum(cost, 2000), 2)
+    })
 
-        grade_factor = {"M20": 1.0, "M25": 1.2, "M30": 1.4}
-        cement = volume * 0.025 * grade_factor[grade] + np.random.uniform(-2, 2)
-        sand = cement * 2.8 + np.random.uniform(-3, 3)
-        labor = volume / random.uniform(60, 90)
+# ── Waterproofing ──────────────────────────────────────────────────────────
+# Kerala: membrane=Rs 220/sqm, chemical=Rs 320/sqm, crystalline=Rs 520/sqm
+def make_waterproofing(n=N):
+    area   = rng.uniform(10, 1000, n)
+    method = rng.choice([0, 1, 2], n)           # 0=membrane, 1=chemical, 2=crystalline
+    loc    = rng.choice([0, 1, 2], n)
+    rate   = np.array([220, 320, 520])[method]
+    cost   = area * rate
+    cost  *= np.array([LOCATION_TIER[l] for l in loc])
+    cost  *= noise(n, 0.06)
+    return pd.DataFrame({
+        "area_sqm": area, "method": method,
+        "location": loc,
+        "cost": np.round(np.maximum(cost, 1000), 2)
+    })
 
-    rows.append([
-        stage,
-        area,
-        thickness,
-        volume,
-        soil,
-        brick_size,
-        grade,
-        round(max(cement, 0), 2),
-        round(max(sand, 0), 2),
-        round(max(labor, 1))
-    ])
+# ── Generate all ───────────────────────────────────────────────────────────
+datasets = {
+    "plastering":    make_plastering,
+    "brickwork":     make_brickwork,
+    "foundation":    make_foundation,
+    "concrete":      make_concrete,
+    "roofing":       make_roofing,
+    "walls":         make_walls,
+    "plumbing":      make_plumbing,
+    "electrical":    make_electrical,
+    "painting":      make_painting,
+    "tiling":        make_tiling,
+    "waterproofing": make_waterproofing,
+}
 
-df = pd.DataFrame(rows, columns=[
-    "stage",
-    "area_sqft",
-    "thickness_mm",
-    "volume_cuft",
-    "soil_type",
-    "brick_size",
-    "grade",
-    "cement_bags",
-    "sand_cuft",
-    "labor_count"
-])
+for name, fn in datasets.items():
+    df = fn()
+    df.to_csv(f"dataset_{name}.csv", index=False)
+    print(f"Generated dataset_{name}.csv  ({len(df)} rows, features: {list(df.columns[:-1])})")
 
-df.to_csv("construction_dataset_1000.csv", index=False)
-
-print("Dataset generated successfully!")
+print(f"\nAll datasets generated. Total samples: {len(datasets) * N:,}")

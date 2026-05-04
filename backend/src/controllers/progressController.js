@@ -9,7 +9,7 @@ exports.updateProgress = async (req, res) => {
 
     const progress = new ProgressLog({
       projectId,
-      updatedBy: req.user.id,
+      updatedBy: req.user.userId || req.user.id,
       progressPercentage,
       remarks,
       imageUrl
@@ -36,9 +36,7 @@ exports.getProjectProgress = async (req, res) => {
     const { projectId } = req.params;
 
     const progressLogs = await ProgressLog.find({ projectId })
-      .populate("stageId", "name")
-      .populate("updatedBy", "name role") 
-      .populate("supervisorId", "name")
+      .populate("updatedBy", "name role")
       .sort({ createdAt: -1 });
 
     res.json(progressLogs);

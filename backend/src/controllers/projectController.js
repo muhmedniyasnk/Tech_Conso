@@ -3,7 +3,7 @@ const Project = require("../models/Project");
 // Create Project (Client)
 exports.createProject = async (req, res) => {
   try {
-    const { name, description, location, clientId, expectedEndDate } = req.body;
+    const { name, description, location, clientId, expectedEndDate, phone, squareFeet, expectedCost } = req.body;
 
     const project = new Project({
       name,
@@ -11,6 +11,9 @@ exports.createProject = async (req, res) => {
       location,
       clientId,
       expectedEndDate,
+      phone,
+      squareFeet,
+      expectedCost,
       status: "pending"
     });
 

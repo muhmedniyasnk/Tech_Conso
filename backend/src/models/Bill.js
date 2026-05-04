@@ -40,6 +40,26 @@ const billSchema = new mongoose.Schema({
   billDate: {
     type: Date,
     default: Date.now
+  },
+
+  // Receipt / bill image uploaded by supervisor
+  billFile: {
+    type: String
+  },
+
+  // Manager signature
+  managerSigned: {
+    type: Boolean,
+    default: false
+  },
+
+  signedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  },
+
+  signedAt: {
+    type: Date
   }
 
 }, { timestamps: true });

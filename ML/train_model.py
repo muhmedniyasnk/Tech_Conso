@@ -1,93 +1,41 @@
 import pandas as pd
 import joblib
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_absolute_percentage_error
 
-# Load dataset
-df = pd.read_csv("construction_dataset_1000.csv")
+stages = {
+    "plastering":    ("dataset_plastering.csv",    ["area_sqft", "thickness_mm", "location", "quality"]),
+    "brickwork":     ("dataset_brickwork.csv",     ["area_sqft", "brick_size", "location", "floors"]),
+    "foundation":    ("dataset_foundation.csv",    ["volume_cuft", "soil_type", "depth_m", "location"]),
+    "concrete":      ("dataset_concrete.csv",      ["volume_cuft", "grade", "location", "season"]),
+    "roofing":       ("dataset_roofing.csv",       ["roof_type", "area_sqm", "pitch_angle", "location", "quality"]),
+    "walls":         ("dataset_walls.csv",         ["length_m", "height_m", "thickness_m", "location", "quality"]),
+    "plumbing":      ("dataset_plumbing.csv",      ["floors", "bathrooms", "kitchens", "location", "quality"]),
+    "electrical":    ("dataset_electrical.csv",    ["floors", "rooms_per_floor", "location", "quality"]),
+    "painting":      ("dataset_painting.csv",      ["area_sqft", "coats", "location", "quality"]),
+    "tiling":        ("dataset_tiling.csv",        ["area_sqm", "tile_size", "location", "quality"]),
+    "waterproofing": ("dataset_waterproofing.csv", ["area_sqm", "method", "location"]),
+}
 
-# Store models
-models = {}
+for stage, (csv, features) in stages.items():
+    df = pd.read_csv(csv)
+    X, y = df[features], df["cost"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=42)
 
-# -------------------------------
-# 1. PLASTERING MODEL
-# -------------------------------
-df_plaster = df[df["stage"] == "plastering"].copy()
+    model = GradientBoostingRegressor(
+        n_estimators=500,
+        learning_rate=0.03,
+        max_depth=6,
+        min_samples_split=10,
+        subsample=0.85,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+    r2   = r2_score(y_test, preds)
+    mape = mean_absolute_percentage_error(y_test, preds) * 100
+    joblib.dump(model, f"model_{stage}.pkl")
+    print(f"[{stage:15s}]  R²={r2:.4f}  MAPE={mape:.2f}%  saved model_{stage}.pkl")
 
-X_plaster = df_plaster[["area_sqft", "thickness_mm"]]
-y_plaster = df_plaster[["cement_bags", "sand_cuft", "labor_count"]]
-
-model_plaster = RandomForestRegressor()
-model_plaster.fit(X_plaster, y_plaster)
-
-joblib.dump({
-    "model": model_plaster,
-    "features": ["area_sqft", "thickness_mm"]
-}, "plastering_model.pkl")
-
-print("✅ Plastering model trained")
-
-
-# -------------------------------
-# 2. BRICKWORK MODEL
-# -------------------------------
-df_brick = df[df["stage"] == "brickwork"].copy()
-
-X_brick = df_brick[["area_sqft", "brick_size"]]
-X_brick = pd.get_dummies(X_brick)
-
-y_brick = df_brick[["cement_bags", "sand_cuft", "labor_count"]]
-
-model_brick = RandomForestRegressor()
-model_brick.fit(X_brick, y_brick)
-
-joblib.dump({
-    "model": model_brick,
-    "features": X_brick.columns.tolist()
-}, "brickwork_model.pkl")
-
-print("✅ Brickwork model trained")
-
-
-# -------------------------------
-# 3. FOUNDATION MODEL
-# -------------------------------
-df_found = df[df["stage"] == "foundation"].copy()
-
-X_found = df_found[["volume_cuft", "soil_type"]]
-X_found = pd.get_dummies(X_found)
-
-y_found = df_found[["cement_bags", "sand_cuft", "labor_count"]]
-
-model_found = RandomForestRegressor()
-model_found.fit(X_found, y_found)
-
-joblib.dump({
-    "model": model_found,
-    "features": X_found.columns.tolist()
-}, "foundation_model.pkl")
-
-print("✅ Foundation model trained")
-
-
-# -------------------------------
-# 4. CONCRETE MODEL
-# -------------------------------
-df_conc = df[df["stage"] == "concrete"].copy()
-
-X_conc = df_conc[["volume_cuft", "grade"]]
-X_conc = pd.get_dummies(X_conc)
-
-y_conc = df_conc[["cement_bags", "sand_cuft", "labor_count"]]
-
-model_conc = RandomForestRegressor()
-model_conc.fit(X_conc, y_conc)
-
-joblib.dump({
-    "model": model_conc,
-    "features": X_conc.columns.tolist()
-}, "concrete_model.pkl")
-
-print("✅ Concrete model trained")
-
-
-print("\n🎯 All models trained and saved successfully!")
+print("\nAll models trained successfully.")

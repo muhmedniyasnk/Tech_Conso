@@ -48,6 +48,19 @@ const projectSchema = new mongoose.Schema({
 
   actualEndDate: {
     type: Date
+  },
+
+  phone: {
+    type: String,
+    maxlength: 10
+  },
+
+  squareFeet: {
+    type: Number
+  },
+
+  expectedCost: {
+    type: Number
   }
 
 }, { timestamps: true });
